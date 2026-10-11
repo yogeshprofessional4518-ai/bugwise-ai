@@ -4,6 +4,7 @@ from unittest.mock import patch
 import streamlit as st
 from streamlit.testing.v1 import AppTest
 
+import examples
 from examples import EXAMPLES
 
 
@@ -29,6 +30,14 @@ def test_sample_sidebar_handles_missing_detection_basis():
         item.value == "Detection: Detection details unavailable."
         for item in app.caption
     )
+
+
+def test_app_does_not_require_optional_detection_helper_at_import_time(monkeypatch):
+    monkeypatch.delattr(examples, "get_detection_basis")
+    app = _run_app()
+
+    assert not app.exception
+    assert any("Detection: Statically detected" in item.value for item in app.caption)
 
 
 def test_analyze_displays_separate_predicted_output_without_running_code():

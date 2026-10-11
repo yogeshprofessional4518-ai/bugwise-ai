@@ -9,7 +9,7 @@ from typing import Any
 import streamlit as st
 
 from analyzer import analyze_code
-from examples import EXAMPLES, find_example_for_source, get_detection_basis
+from examples import EXAMPLES, find_example_for_source
 from explainer import explain_findings
 from fixer import get_fix_options, suggest_fix
 from predictor import predict_output
@@ -499,7 +499,11 @@ with st.sidebar:
     st.caption(
         f"Expected diagnosis: {selected_sample.get('expected_diagnosis', 'No sample diagnosis is available.') }"
     )
-    st.caption(f"Detection: {get_detection_basis(selected_sample)}")
+    detection_basis = selected_sample.get(
+        "detection_basis",
+        "Detection details unavailable.",
+    )
+    st.caption(f"Detection: {detection_basis}")
     st.button("Load Example", use_container_width=True, on_click=_load_example)
     st.divider()
     st.markdown("#### Session activity")
