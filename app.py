@@ -12,6 +12,14 @@ from analyzer import analyze_code
 from examples import EXAMPLES, find_example_for_source
 from explainer import explain_findings
 from fixer import get_fix_options, suggest_fix
+from java_analyzer import (
+    analyze_java,
+    explain_java_findings,
+    suggest_java_fix,
+    verify_java_fix,
+)
+from java_examples import JAVA_EXAMPLES, find_java_example_for_source
+from java_predictor import predict_java_output
 from predictor import predict_output
 from verifier import verify_fix
 
@@ -105,6 +113,7 @@ def _initialize_state() -> None:
         "session_findings": 0,
         "session_issue_counts": {},
         "latest_result": None,
+        "language_choice": "Python",
         "selected_example": None,
         "reveal_correction": False,
         "example_choice": next(iter(EXAMPLES)),
@@ -117,9 +126,24 @@ def _initialize_state() -> None:
 
 
 def _load_example() -> None:
-    sample = EXAMPLES[st.session_state.example_choice]
+    examples = _examples_for_language(st.session_state.language_choice)
+    sample = examples[st.session_state.example_choice]
     st.session_state.code_editor = sample["original_code"]
     st.session_state.selected_example = sample["id"]
+    st.session_state.latest_result = None
+    st.session_state.reveal_correction = False
+    st.session_state.practice_hint_shown = False
+    st.session_state.practice_answer_shown = False
+
+
+def _examples_for_language(language: str) -> dict[str, dict[str, Any]]:
+    return JAVA_EXAMPLES if language == "Java" else EXAMPLES
+
+
+def _on_language_change() -> None:
+    examples = _examples_for_language(st.session_state.language_choice)
+    st.session_state.example_choice = next(iter(examples))
+    st.session_state.selected_example = None
     st.session_state.latest_result = None
     st.session_state.reveal_correction = False
     st.session_state.practice_hint_shown = False
@@ -135,7 +159,27 @@ def _clear_editor() -> None:
     st.session_state.practice_answer_shown = False
 
 
-def _analyze(source: str) -> dict[str, Any]:
+def _analyze(source: str, language: str = "Python") -> dict[str, Any]:
+    if language == "Java":
+        analysis = analyze_java(source)
+        matching_example = find_java_example_for_source(source)
+        fix = suggest_java_fix(source, analysis["findings"])
+        verification = verify_java_fix()
+        return {
+            "source": source,
+            "language": language,
+            "analysis": analysis,
+            "prediction": predict_java_output(source),
+            "fix": fix,
+            "fix_options": [],
+            "verification": verification,
+            "explanations": explain_java_findings(
+                analysis["findings"], corrected_example=fix["suggested_code"]
+            ),
+            "matching_example": matching_example,
+            "created_at": datetime.now().strftime("%H:%M:%S"),
+        }
+
     analysis = analyze_code(source)
     prediction = predict_output(source)
     matching_example = find_example_for_source(source)
@@ -162,6 +206,7 @@ def _analyze(source: str) -> dict[str, Any]:
     )
     return {
         "source": source,
+        "language": language,
         "analysis": analysis,
         "prediction": prediction,
         "fix": fix,
@@ -248,6 +293,36 @@ def _practice_for(result: dict[str, Any]) -> tuple[str, str, str]:
             "Consider converting the number or using formatted-string syntax.",
             "Convert the number to text or use an f-string such as `f'Age: {age}'`.",
         ),
+        "JavaMissingSemicolon": (
+            "What punctuation ends most Java statements?",
+            "Look at the end of the declaration or println statement.",
+            "Add a semicolon (`;`) after the statement.",
+        ),
+        "JavaUnmatchedDelimiter": (
+            "How do Java blocks and expressions use delimiters?",
+            "Check that each opening parenthesis and brace has a matching closer.",
+            "Pair the reported delimiter with its matching `)`, `]`, or `}`.",
+        ),
+        "JavaMainCapitalization": (
+            "Is Java case-sensitive when naming methods?",
+            "Compare the entry-point spelling with lowercase `main`.",
+            "Spell the conventional entry point `main` with a lowercase `m`.",
+        ),
+        "JavaPrintlnSyntax": (
+            "Where do Java method-call arguments go?",
+            "Check whether the value following println is enclosed in parentheses.",
+            "Write the argument inside parentheses, as in `System.out.println(\"ready\");`.",
+        ),
+        "JavaTypeMismatch": (
+            "Why does Java require declared variable types to match their values?",
+            "Compare the literal initializer with the declared type.",
+            "Choose a compatible literal or change the declaration to the intended type.",
+        ),
+        "JavaUndeclaredVariable": (
+            "What must happen before a Java local variable is assigned?",
+            "Look for a declaration of that name in the inspected source.",
+            "Declare the variable with its intended type before assigning to it.",
+        ),
         "clean": (
             "Does a clean static analysis prove code is free of runtime errors?",
             "Static analysis does not execute the program.",
@@ -275,7 +350,10 @@ def _show_diagnosis(result: dict[str, Any], learning_mode: bool) -> None:
             st.caption(f"{finding['category']} · {finding['confidence']}")
             st.markdown(f"**Next action:** {finding['next_action']}")
             if finding.get("source_line"):
-                st.code(finding["source_line"], language="python")
+                st.code(
+                    finding["source_line"],
+                    language=result.get("language", "Python").lower(),
+                )
             st.divider()
 
     matching_example = result["matching_example"]
@@ -302,7 +380,12 @@ def _show_diagnosis(result: dict[str, Any], learning_mode: bool) -> None:
                     st.write(f"**Prevention tip:** {lesson['prevention_tip']}")
                     st.caption(lesson["basis"])
         elif matching_example:
-            st.write(matching_example.get("python_concept", "Review the Python concept in this sample."))
+            st.write(
+                matching_example.get(
+                    "concept",
+                    matching_example.get("python_concept", "Review the concept in this sample."),
+                )
+            )
             if matching_example.get("prevention_tip"):
                 st.caption(f"Prevention tip: {matching_example['prevention_tip']}")
 
@@ -337,15 +420,16 @@ def _show_fix(result: dict[str, Any], learning_mode: bool) -> None:
         original, corrected = st.columns(2)
         with original:
             st.markdown("**Original code**")
-            st.code(fix["original_code"], language="python")
+            language = result.get("language", "Python").lower()
+            st.code(fix["original_code"], language=language)
         with corrected:
             st.markdown("**Suggested code**")
-            st.code(fix["suggested_code"], language="python")
+            st.code(fix["suggested_code"], language=language)
             st.download_button(
                 "Download Fixed Code",
                 data=fix["suggested_code"],
-                file_name="bugwise_fixed.py",
-                mime="text/x-python",
+                file_name=f"bugwise_fixed.{'java' if language == 'java' else 'py'}",
+                mime="text/x-java" if language == "java" else "text/x-python",
                 key="download_fixed_code",
             )
         st.caption("Use the code block's built-in copy control to copy the suggested code.")
@@ -399,6 +483,11 @@ def _show_evidence(result: dict[str, Any], learning_mode: bool) -> None:
 
 def _show_verification(result: dict[str, Any]) -> None:
     verification = result["verification"]
+    if verification["status"] == "unsupported":
+        st.info("Verification is unsupported for Java source.")
+        st.caption(verification["compilation"]["detail"])
+        st.caption(verification["warning"])
+        return
     compilation = verification["compilation"]
     if compilation["passed"]:
         st.success("Syntax validation passed.")
@@ -447,10 +536,16 @@ def _show_overview(result: dict[str, Any]) -> None:
         st.warning(analysis["summary"])
     else:
         st.success(analysis["summary"])
-    st.caption(
-        f"Source parse: {'valid' if analysis['source_valid'] else 'not valid / not provided'} · "
-        f"Other static or environment warnings: {static_warnings}"
-    )
+    if result.get("language", "Python") == "Java":
+        st.caption(
+            f"Limited Java static checks · Other warnings: {static_warnings}. "
+            "No Java compiler was invoked."
+        )
+    else:
+        st.caption(
+            f"Source parse: {'valid' if analysis['source_valid'] else 'not valid / not provided'} · "
+            f"Other static or environment warnings: {static_warnings}"
+        )
     if findings:
         st.caption(
             "A potential runtime risk is inferred from static evidence; it is not a claim that "
@@ -458,9 +553,12 @@ def _show_overview(result: dict[str, Any]) -> None:
         )
 
 
-def _show_prediction(prediction: dict[str, str]) -> None:
+def _show_prediction(prediction: dict[str, str], language: str = "Python") -> None:
     st.markdown("#### Predicted Output — Not Executed")
-    st.caption("Rule-based prediction for supported Python syntax; submitted code was not run.")
+    if language == "Java":
+        st.caption("Only bounded integer/string statements and println expressions are predicted; source was not run.")
+    else:
+        st.caption("Rule-based prediction for supported Python syntax; submitted code was not run.")
     if prediction["status"] == "predicted":
         st.code(prediction["output"] or "(no printed output)", language="text")
     elif prediction["status"] == "error":
@@ -487,15 +585,25 @@ st.markdown(
 
 with st.sidebar:
     st.markdown('<p class="eyebrow">Workspace</p>', unsafe_allow_html=True)
+    st.selectbox(
+        "Language",
+        ["Python", "Java"],
+        key="language_choice",
+        on_change=_on_language_change,
+    )
     learning_mode = st.toggle("Learning Mode", value=False, help="Show beginner explanations and a guided practice question.")
     st.markdown("#### Sample cases")
+    current_language = st.session_state.language_choice
+    current_examples = _examples_for_language(current_language)
     st.selectbox(
-        "Choose a Python example",
-        list(EXAMPLES),
+        f"Choose a {current_language} example",
+        list(current_examples),
         key="example_choice",
-        format_func=lambda name: _EXAMPLE_LABELS.get(name, name),
+        format_func=lambda name: (
+            _EXAMPLE_LABELS.get(name, name) if current_language == "Python" else name
+        ),
     )
-    selected_sample = EXAMPLES[st.session_state.example_choice]
+    selected_sample = current_examples[st.session_state.example_choice]
     st.caption(
         f"Expected diagnosis: {selected_sample.get('expected_diagnosis', 'No sample diagnosis is available.') }"
     )
@@ -524,17 +632,22 @@ with st.sidebar:
 editor_col, result_col = st.columns([1.05, 1])
 with editor_col:
     st.markdown('<p class="eyebrow">01 / Source</p>', unsafe_allow_html=True)
-    st.markdown('<p class="section-title">Python editor</p>', unsafe_allow_html=True)
+    current_language = st.session_state.language_choice
+    st.markdown(f'<p class="section-title">{current_language} editor</p>', unsafe_allow_html=True)
     st.markdown(
-        '<p class="section-hint">Paste or write Python. Analysis and prediction use static, restricted checks; submitted code is never executed.</p>',
+        f'<p class="section-hint">Paste or write {current_language}. Analysis uses limited static checks; submitted code is never executed.</p>',
         unsafe_allow_html=True,
     )
     source = st.text_area(
-        "Python code",
+        f"{current_language} code",
         key="code_editor",
         height=410,
         label_visibility="collapsed",
-        placeholder="def calculate_total(items):\n    return sum(items)\n",
+        placeholder=(
+            "def calculate_total(items):\n    return sum(items)\n"
+            if current_language == "Python"
+            else "public class Main {\n    public static void main(String[] args) {\n        System.out.println(\"Hello\");\n    }\n}"
+        ),
     )
     analyze_col, reset_col = st.columns([1.2, 0.9])
     with analyze_col:
@@ -542,13 +655,14 @@ with editor_col:
             "Analyze Code",
             type="primary",
             use_container_width=True,
-            help="Parse and statically inspect the code without running it.",
+            help=f"Run limited static {current_language} checks without executing the source.",
         )
     with reset_col:
         st.button("Clear Code", use_container_width=True, on_click=_clear_editor)
     if st.session_state.selected_example:
+        selected_examples = _examples_for_language(st.session_state.language_choice)
         example = next(
-            item for item in EXAMPLES.values()
+            item for item in selected_examples.values()
             if item["id"] == st.session_state.selected_example
         )
         st.caption(
@@ -563,7 +677,7 @@ with editor_col:
             st.session_state.latest_result = None
             try:
                 with st.spinner("Parsing and checking the code…"):
-                    result = _analyze(source)
+                    result = _analyze(source, current_language)
             except Exception as error:
                 LOGGER.exception("BugWise analysis failed")
                 st.error(f"Analysis failed ({type(error).__name__}); the submitted code was not executed.")
@@ -587,7 +701,7 @@ with result_col:
             unsafe_allow_html=True,
         )
     else:
-        _show_prediction(result["prediction"])
+        _show_prediction(result["prediction"], result.get("language", "Python"))
         tabs = st.tabs(["Overview", "Diagnosis", "Suggested Fix", "Fix Evidence", "Verification"])
         with tabs[0]:
             _show_overview(result)

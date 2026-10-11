@@ -4,15 +4,15 @@
 
 ## Problem
 
-New programmers may know that Python reported an error but still struggle to locate the cause, understand the concept, choose a safe correction, and distinguish a syntax check from a behavioral test.
+New programmers may know that Python or Java reported an error but still struggle to locate the cause, understand the concept, choose a safe correction, and distinguish static checks from behavioral testing.
 
 ## Proposed solution
 
-BugWise AI is a local-first debugging dashboard. It parses pasted Python, identifies a limited set of well-supported static issues, explains them in beginner-friendly terms, suggests only conservative edits, and clearly reports which checks ran.
+BugWise AI is a local-first debugging dashboard. It analyzes pasted Python and Java with language-specific static checks, explains selected issues, suggests conservative edits, and clearly reports which checks are unsupported.
 
 ## Architecture
 
-`app.py` coordinates the Streamlit interface. `analyzer.py` validates and inspects source. `predictor.py` estimates output for a restricted AST subset without executing submitted code. `fixer.py` creates reviewable suggestions and a `difflib` patch. `explainer.py` maps findings to rule-based lessons. `verifier.py` compiles candidates and computes results with trusted reference operations on fixture inputs, without executing candidate code. `examples.py` supplies educational examples and expected results.
+`app.py` coordinates the Streamlit interface and language-specific examples. `analyzer.py`, `fixer.py`, `verifier.py`, and `predictor.py` retain the Python workflow. `java_analyzer.py` performs conservative Java checks and fixes; `java_predictor.py` handles a small integer/string expression subset without compiling or running Java source. Java verification remains explicitly unsupported.
 
 ## AST and compile()
 
@@ -25,6 +25,12 @@ The analyzer reports syntax and indentation errors with parser line numbers. A s
 ## Verification and test cases
 
 The verifier checks compilation and computes expected-versus-actual outcomes using allowlisted trusted reference operations on fixed educational inputs. It never runs the submitted source. Fixture tests are enabled only when the editor contains an exact educational sample and its known correction; they demonstrate the sample's behavior, not arbitrary candidate behavior. A successful compile is a syntax result, not proof of logical correctness.
+
+## Java limitations
+
+- Java checks are rule-based, not a complete parser or compiler. They focus on obvious beginner mistakes and avoid guessing about complex scope.
+- Java verification is unsupported. Prediction supports initialized `int`/`String` variables, simple assignments, integer arithmetic, string concatenation, and `System.out.println` statements, optionally inside a conventional `main` wrapper. Loops, methods, imports, other types, and overflow are unsupported.
+- No submitted source is executed.
 
 ## Limitations
 
