@@ -21,6 +21,15 @@ from java_analyzer import (
 from java_examples import JAVA_EXAMPLES, find_java_example_for_source
 from java_predictor import predict_java_output
 from predictor import predict_output
+from sql_analyzer import (
+    analyze_sql,
+    explain_sql_findings,
+    predict_sql_output,
+    suggest_sql_fix,
+    verify_sql_fix,
+)
+from sql_examples import SQL_EXAMPLES, find_sql_example_for_source
+from sql_sample_data import sample_rows_as_dicts
 from verifier import verify_fix
 
 LOGGER = logging.getLogger(__name__)
@@ -137,7 +146,11 @@ def _load_example() -> None:
 
 
 def _examples_for_language(language: str) -> dict[str, dict[str, Any]]:
-    return JAVA_EXAMPLES if language == "Java" else EXAMPLES
+    if language == "Java":
+        return JAVA_EXAMPLES
+    if language == "SQL":
+        return SQL_EXAMPLES
+    return EXAMPLES
 
 
 def _on_language_change() -> None:
@@ -176,6 +189,22 @@ def _analyze(source: str, language: str = "Python") -> dict[str, Any]:
             "explanations": explain_java_findings(
                 analysis["findings"], corrected_example=fix["suggested_code"]
             ),
+            "matching_example": matching_example,
+            "created_at": datetime.now().strftime("%H:%M:%S"),
+        }
+    if language == "SQL":
+        analysis = analyze_sql(source)
+        matching_example = find_sql_example_for_source(source)
+        fix = suggest_sql_fix(source, analysis["findings"])
+        return {
+            "source": source,
+            "language": language,
+            "analysis": analysis,
+            "prediction": predict_sql_output(source),
+            "fix": fix,
+            "fix_options": [],
+            "verification": verify_sql_fix(),
+            "explanations": explain_sql_findings(analysis["findings"]),
             "matching_example": matching_example,
             "created_at": datetime.now().strftime("%H:%M:%S"),
         }
@@ -323,6 +352,36 @@ def _practice_for(result: dict[str, Any]) -> tuple[str, str, str]:
             "Look for a declaration of that name in the inspected source.",
             "Declare the variable with its intended type before assigning to it.",
         ),
+        "SQLPossibleMissingFrom": (
+            "A selected name may need a source table.",
+            "The query selects a name without a top-level FROM clause.",
+            "Add the intended table if the name is a column; some dialects allow SELECT without FROM.",
+        ),
+        "SQLPossibleMissingComma": (
+            "Two selected names may need a comma between them.",
+            "Adjacent names can represent separate columns or an implicit alias.",
+            "If both names are columns, separate them with a comma.",
+        ),
+        "SQLIncompleteWhere": (
+            "A WHERE clause needs a recognizable condition.",
+            "The condition appears empty or ends before its expression is complete.",
+            "Write the intended left expression, operator, and right expression.",
+        ),
+        "SQLPossibleMissingJoinCondition": (
+            "A JOIN may need a matching condition.",
+            "No ON or USING clause was found in this common JOIN form.",
+            "Add the intended ON/USING condition unless this is intentionally a cross or natural join.",
+        ),
+        "SQLIncompleteJoinCondition": (
+            "A JOIN condition keyword is present without its expression.",
+            "ON or USING is followed by a clause ending or statement terminator.",
+            "Add the intended join expression after ON or the column list after USING.",
+        ),
+        "SQLPossibleMissingGroupBy": (
+            "A selected non-aggregate column may need grouping.",
+            "The query combines an aggregate expression with a regular selected column.",
+            "In standard SQL, group by the non-aggregate column; dialect behavior varies.",
+        ),
         "clean": (
             "Does a clean static analysis prove code is free of runtime errors?",
             "Static analysis does not execute the program.",
@@ -341,7 +400,9 @@ def _practice_for(result: dict[str, Any]) -> tuple[str, str, str]:
 
 def _show_diagnosis(result: dict[str, Any], learning_mode: bool) -> None:
     analysis = result["analysis"]
-    if not analysis["findings"]:
+    if analysis["status"] == "unsupported":
+        st.info(analysis["summary"])
+    elif not analysis["findings"]:
         st.success("No issue was identified by the available static checks.")
     for finding in analysis["findings"]:
         with st.container():
@@ -428,8 +489,16 @@ def _show_fix(result: dict[str, Any], learning_mode: bool) -> None:
             st.download_button(
                 "Download Fixed Code",
                 data=fix["suggested_code"],
-                file_name=f"bugwise_fixed.{'java' if language == 'java' else 'py'}",
-                mime="text/x-java" if language == "java" else "text/x-python",
+                file_name=(
+                    "bugwise_fixed.sql" if language == "sql"
+                    else "bugwise_fixed.java" if language == "java"
+                    else "bugwise_fixed.py"
+                ),
+                mime=(
+                    "application/sql" if language == "sql"
+                    else "text/x-java" if language == "java"
+                    else "text/x-python"
+                ),
                 key="download_fixed_code",
             )
         st.caption("Use the code block's built-in copy control to copy the suggested code.")
@@ -484,7 +553,7 @@ def _show_evidence(result: dict[str, Any], learning_mode: bool) -> None:
 def _show_verification(result: dict[str, Any]) -> None:
     verification = result["verification"]
     if verification["status"] == "unsupported":
-        st.info("Verification is unsupported for Java source.")
+        st.info(f"Verification is unsupported for {result.get('language', 'this')} source.")
         st.caption(verification["compilation"]["detail"])
         st.caption(verification["warning"])
         return
@@ -532,6 +601,8 @@ def _show_overview(result: dict[str, Any]) -> None:
     st.markdown("**Analysis summary**")
     if analysis["status"] == "invalid":
         st.error(analysis["summary"])
+    elif analysis["status"] == "unsupported":
+        st.info(analysis["summary"])
     elif findings:
         st.warning(analysis["summary"])
     else:
@@ -540,6 +611,11 @@ def _show_overview(result: dict[str, Any]) -> None:
         st.caption(
             f"Limited Java static checks · Other warnings: {static_warnings}. "
             "No Java compiler was invoked."
+        )
+    elif result.get("language") == "SQL":
+        st.caption(
+            f"Limited SQL text checks · Other review notes: {static_warnings}. "
+            "No database or SQL parser service was used."
         )
     else:
         st.caption(
@@ -554,9 +630,25 @@ def _show_overview(result: dict[str, Any]) -> None:
 
 
 def _show_prediction(prediction: dict[str, str], language: str = "Python") -> None:
+    if language == "SQL":
+        if prediction["status"] == "predicted":
+            st.markdown(f"#### {prediction['label']}")
+            st.caption(prediction["message"])
+            st.dataframe(
+                [dict(zip(prediction["columns"], row)) for row in prediction["rows"]],
+                hide_index=True,
+                use_container_width=True,
+            )
+        else:
+            st.markdown("#### Predicted Result — Not Available")
+            st.info(prediction["message"])
+        return
+
     st.markdown("#### Predicted Output — Not Executed")
     if language == "Java":
         st.caption("Only bounded integer/string statements and println expressions are predicted; source was not run.")
+    elif language == "SQL":
+        st.caption("Query results depend on schema and table contents; SQL is never executed.")
     else:
         st.caption("Rule-based prediction for supported Python syntax; submitted code was not run.")
     if prediction["status"] == "predicted":
@@ -587,7 +679,7 @@ with st.sidebar:
     st.markdown('<p class="eyebrow">Workspace</p>', unsafe_allow_html=True)
     st.selectbox(
         "Language",
-        ["Python", "Java"],
+        ["Python", "Java", "SQL"],
         key="language_choice",
         on_change=_on_language_change,
     )
@@ -647,8 +739,17 @@ with editor_col:
             "def calculate_total(items):\n    return sum(items)\n"
             if current_language == "Python"
             else "public class Main {\n    public static void main(String[] args) {\n        System.out.println(\"Hello\");\n    }\n}"
+            if current_language == "Java"
+            else "SELECT name, age FROM users WHERE active = 1;"
         ),
     )
+    if current_language == "SQL":
+        st.markdown("#### Built-in sample data")
+        st.caption("Illustrative local rows only; these tables are not your database.")
+        with st.expander("students", expanded=True):
+            st.dataframe(sample_rows_as_dicts("students"), hide_index=True, use_container_width=True)
+        with st.expander("departments", expanded=True):
+            st.dataframe(sample_rows_as_dicts("departments"), hide_index=True, use_container_width=True)
     analyze_col, reset_col = st.columns([1.2, 0.9])
     with analyze_col:
         analyze_clicked = st.button(
@@ -672,7 +773,7 @@ with editor_col:
 
     if analyze_clicked:
         if not source.strip():
-            st.warning("Enter or load Python code before analyzing.")
+            st.warning(f"Enter or load {current_language} code before analyzing.")
         else:
             st.session_state.latest_result = None
             try:

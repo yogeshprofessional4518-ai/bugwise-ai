@@ -12,7 +12,7 @@ BugWise AI is a local-first debugging dashboard. It analyzes pasted Python and J
 
 ## Architecture
 
-`app.py` coordinates the Streamlit interface and language-specific examples. `analyzer.py`, `fixer.py`, `verifier.py`, and `predictor.py` retain the Python workflow. `java_analyzer.py` performs conservative Java checks and fixes; `java_predictor.py` handles a small integer/string expression subset without compiling or running Java source. Java verification remains explicitly unsupported.
+`app.py` coordinates the Streamlit interface and language-specific examples. `analyzer.py`, `fixer.py`, `verifier.py`, and `predictor.py` retain the Python workflow. `java_analyzer.py` and `java_predictor.py` handle conservative Java checks and a small integer/string expression subset. `sql_analyzer.py` inspects a bounded SELECT subset and returns unavailable prediction/verification states; submitted SQL is never executed.
 
 ## AST and compile()
 
@@ -31,6 +31,12 @@ The verifier checks compilation and computes expected-versus-actual outcomes usi
 - Java checks are rule-based, not a complete parser or compiler. They focus on obvious beginner mistakes and avoid guessing about complex scope.
 - Java verification is unsupported. Prediction supports initialized `int`/`String` variables, simple assignments, integer arithmetic, string concatenation, and `System.out.println` statements, optionally inside a conventional `main` wrapper. Loops, methods, imports, other types, and overflow are unsupported.
 - No submitted source is executed.
+
+## SQL limitations
+
+- SQL checks are conservative text rules, not a full parser; dialect differences can make FROM, comma, JOIN, or GROUP BY findings uncertain.
+- Only one bounded SELECT statement is analyzed. Other statement types and multiple statements are explicitly unsupported.
+- Query result prediction uses only fixed built-in sample tables and is illustrative; it may differ from a real database. Verification is unsupported and no database is contacted.
 
 ## Limitations
 
