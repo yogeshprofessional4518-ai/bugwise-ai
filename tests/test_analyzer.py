@@ -74,6 +74,22 @@ def test_common_static_and_literal_findings():
         assert error_type in {item["error_type"] for item in findings}
 
 
+def test_zero_division_from_preceding_literal_assignment_is_reported():
+    source = "a = 10; b = 0; print(a / b)\n"
+    findings = analyze_code(source)["findings"]
+    finding = next(item for item in findings if item["error_type"] == "ZeroDivisionError")
+
+    assert finding["category"] == "potential_runtime"
+    assert finding["line_number"] == 1
+
+
+def test_reassigned_nonzero_literal_does_not_report_zero_division():
+    source = "b = 0\nb = 5\nprint(10 / b)\n"
+    findings = analyze_code(source)["findings"]
+
+    assert "ZeroDivisionError" not in {item["error_type"] for item in findings}
+
+
 def test_missing_import_is_reported_without_importing_it():
     findings = analyze_code("import bugwise_module_that_does_not_exist\n")["findings"]
     assert any(item["error_type"] == "ModuleNotFoundError" for item in findings)

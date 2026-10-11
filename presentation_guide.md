@@ -1,3 +1,5 @@
+-The verifier checks compilation and computes expected-versus-actual outcomes using allowlisted trusted reference operations on fixed educational inputs. It never runs the submitted source. Fixture tests are enabled only when the editor contains an exact educational sample and its known correction; they demonstrate the sample's behavior, not arbitrary candidate behavior. A successful compile is a syntax result, not proof of logical correctness.
+6. Show the fixture calculation that returns `10` and read the verification warning aloud: it did not run the pasted source.
 # BugWise AI — Presentation Guide
 
 ## Problem
@@ -10,7 +12,7 @@ BugWise AI is a local-first debugging dashboard. It parses pasted Python, identi
 
 ## Architecture
 
-`app.py` coordinates the Streamlit interface. `analyzer.py` validates and inspects source. `fixer.py` creates reviewable suggestions and a `difflib` patch. `explainer.py` maps findings to rule-based lessons. `verifier.py` compiles candidates and runs a small allowlist of trusted reference operations on fixture inputs, without executing candidate code. `examples.py` supplies ten educational examples and expected results.
+`app.py` coordinates the Streamlit interface. `analyzer.py` validates and inspects source. `predictor.py` estimates output for a restricted AST subset without executing submitted code. `fixer.py` creates reviewable suggestions and a `difflib` patch. `explainer.py` maps findings to rule-based lessons. `verifier.py` compiles candidates and computes results with trusted reference operations on fixture inputs, without executing candidate code. `examples.py` supplies educational examples and expected results.
 
 ## AST and compile()
 
@@ -22,7 +24,7 @@ The analyzer reports syntax and indentation errors with parser line numbers. A s
 
 ## Verification and test cases
 
-The verifier checks compilation and computes expected-versus-actual outcomes using allowlisted trusted reference operations on fixed educational inputs. It never runs the submitted source or claims it was sandboxed. Fixture tests are enabled only when the editor contains an exact educational sample and its known correction; they demonstrate the sample's behavior, not arbitrary candidate behavior. A successful compile is a syntax result, not proof of logical correctness.
+The verifier checks compilation and computes expected-versus-actual outcomes using allowlisted trusted reference operations on fixed educational inputs. It never runs the submitted source. Fixture tests are enabled only when the editor contains an exact educational sample and its known correction; they demonstrate the sample's behavior, not arbitrary candidate behavior. A successful compile is a syntax result, not proof of logical correctness.
 
 ## Limitations
 
@@ -33,7 +35,7 @@ The verifier checks compilation and computes expected-versus-actual outcomes usi
 
 ## Future improvements
 
-Add an OS-enforced isolated execution service with strict CPU, memory, filesystem, and network limits; broaden static rules with precision tests; and allow instructors to add trusted, transparent test fixtures.
+Expand the predictor's supported AST subset with focused accuracy and safety tests; broaden static rules; and allow instructors to add trusted, transparent fixture checks.
 
 ## Short demo script
 
@@ -51,11 +53,11 @@ Add an OS-enforced isolated execution service with strict CPU, memory, filesyste
 2. **What is an AST?** An Abstract Syntax Tree is a structured representation of source code that tools can inspect without running it.
 3. **Why use `compile()`?** It asks Python to validate/compile syntax, and in this app the resulting code object is discarded rather than executed.
 4. **Does successful compilation mean the program is correct?** No. It only establishes syntax/compilability, not intended behavior.
-5. **Does the app run pasted Python?** No. User source is never executed with `exec`, `eval`, or a subprocess.
+5. **Does the app run pasted Python?** No. It parses and statically inspects source; predictions come only from a restricted AST evaluator.
 6. **How does it find a misspelled name?** A symbol-table analysis identifies unresolved global references; the fixer only suggests a unique close match among visible names.
 7. **Can static analysis find every NameError?** No. Dynamic globals, imports, and runtime state can change which names exist.
 8. **How are corrections verified?** Candidates are compiled, and allowlisted trusted reference operations run on known fixture inputs; the candidate itself is not run.
 9. **What is Learning Mode?** It gives a hint and concept explanation first, hiding the correction until the learner asks to reveal it.
-10. **Why not just run code in Streamlit?** Arbitrary Python has access to process capabilities; running it in the web app would be unsafe without real OS isolation.
+10. **How is predicted output kept safe?** The predictor accepts only explicit AST constructs, applies size limits, and reports unsupported code without running it.
 11. **What does the diff show?** A unified text diff between original input and a suggested copy; the original input remains unchanged.
-12. **What is the next important improvement?** A separately isolated runner with OS-enforced resource and capability limits, plus trustworthy behavioral tests.
+12. **What is the next important improvement?** Expand static and prediction coverage with accuracy-focused tests while preserving the no-execution boundary.

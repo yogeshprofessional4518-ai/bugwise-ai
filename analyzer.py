@@ -83,7 +83,7 @@ def _top_level_name_errors(source: str, tree: ast.Module) -> list[dict[str, Any]
 
 def _literal_runtime_risks(tree: ast.Module) -> list[dict[str, Any]]:
     findings: list[dict[str, Any]] = []
-    literal_history: dict[str, list[tuple[int, ast.expr | None]]] = {}
+    literal_history: dict[str, list[tuple[int, int, ast.expr | None]]] = {}
     for statement in tree.body:
         if isinstance(statement, ast.Assign):
             targets = [target.id for target in statement.targets if isinstance(target, ast.Name)]
@@ -101,19 +101,37 @@ def _literal_runtime_risks(tree: ast.Module) -> list[dict[str, Any]]:
             else None
         )
         for name in targets:
-            literal_history.setdefault(name, []).append((statement.lineno, literal_value))
+            literal_history.setdefault(name, []).append(
+                (statement.lineno, statement.col_offset, literal_value)
+            )
 
-    def literal_binding(node: ast.expr, line_number: int) -> ast.expr | None:
+    def literal_binding(node: ast.expr, line_number: int, column_offset: int) -> ast.expr | None:
         if isinstance(node, (ast.Constant, ast.List, ast.Tuple, ast.Dict)):
             return node
         if isinstance(node, ast.Name):
             preceding = [
                 value
-                for line, value in literal_history.get(node.id, [])
-                if line < line_number
+                for line, column, value in literal_history.get(node.id, [])
+                if (line, column) < (line_number, column_offset)
             ]
             return preceding[-1] if preceding else None
         return None
+
+    def numeric_literal(node: ast.expr) -> int | float | None:
+        if isinstance(node, ast.Constant) and type(node.value) in (int, float):
+            return node.value
+        if (
+            isinstance(node, ast.UnaryOp)
+            and isinstance(node.op, ast.USub)
+            and isinstance(node.operand, ast.Constant)
+            and type(node.operand.value) in (int, float)
+        ):
+            return -node.operand.value
+        return None
+
+    def resolved_numeric_literal(node: ast.expr) -> int | float | None:
+        resolved = literal_binding(node, node.lineno, node.col_offset)
+        return numeric_literal(resolved) if resolved is not None else None
 
     def integer_literal(node: ast.expr) -> int | None:
         if (
@@ -134,19 +152,20 @@ def _literal_runtime_risks(tree: ast.Module) -> list[dict[str, Any]]:
 
     for node in ast.walk(tree):
         if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Div, ast.FloorDiv, ast.Mod)):
-            if isinstance(node.right, ast.Constant) and node.right.value == 0:
+            divisor = resolved_numeric_literal(node.right)
+            if divisor == 0:
                 findings.append(
                     _finding(
                         "potential_runtime",
                         "ZeroDivisionError",
-                        "This expression divides by a literal zero.",
+                        "This expression divides by a statically known zero value.",
                         node.lineno,
                         "High for this expression; runtime control flow was not executed.",
                         "Use a non-zero divisor or handle the zero case before dividing.",
                     )
                 )
         elif isinstance(node, ast.Subscript):
-            container = literal_binding(node.value, node.lineno)
+            container = literal_binding(node.value, node.lineno, node.col_offset)
             key = node.slice
             index_value = integer_literal(key)
             if (
@@ -189,8 +208,8 @@ def _literal_runtime_risks(tree: ast.Module) -> list[dict[str, Any]]:
                         )
                     )
         elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-            left = literal_binding(node.left, node.lineno)
-            right = literal_binding(node.right, node.lineno)
+            left = literal_binding(node.left, node.lineno, node.col_offset)
+            right = literal_binding(node.right, node.lineno, node.col_offset)
             if isinstance(left, ast.Constant) and isinstance(right, ast.Constant):
                 incompatible = (
                     isinstance(left.value, str)
@@ -231,7 +250,7 @@ def _literal_runtime_risks(tree: ast.Module) -> list[dict[str, Any]]:
                     )
                 )
         elif isinstance(node, ast.Attribute):
-            receiver = literal_binding(node.value, node.lineno)
+            receiver = literal_binding(node.value, node.lineno, node.col_offset)
             value = receiver.value if isinstance(receiver, ast.Constant) else None
             if isinstance(value, str) and node.attr in {"append", "extend", "sort", "reverse"}:
                 findings.append(

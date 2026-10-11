@@ -12,7 +12,7 @@ Beginning Python programmers often see an exception but do not know which line m
 - Explain findings in beginner-friendly language and connect them to Python concepts.
 - Offer only limited, reviewable source suggestions.
 - Verify compilation and show transparent results from trusted educational fixtures.
-- Never execute user-submitted source in the Streamlit process.
+- Never execute submitted source.
 
 ## Features
 
@@ -22,9 +22,15 @@ Beginning Python programmers often see an exception but do not know which line m
 - Suggested corrections are compiled before they are exposed as corrections; candidates that fail compilation are not offered, and the failed change is identified as rejected in Fix Evidence.
 - Supported literal list-index findings include separately labeled, syntax-checked Fix Options for guarding an access or iterating the list. Options describe their tradeoffs and do not choose a replacement index.
 - `difflib` unified diff, beginner explanations deduplicated by Python concept, sample selector, Learning Mode, and in-session history.
-- Ten educational examples, including syntax, common runtime risks, and logical mistakes.
+- Eleven educational examples, including missing-colon `SyntaxError`, unresolved-name `NameError`, out-of-range `IndexError`, literal zero division, incompatible operand `TypeError`, and clean code. Each sample identifies what the static checks can establish and when runtime testing would still be needed.
+- Eleven educational examples, including missing-colon `SyntaxError`, unresolved-name `NameError`, out-of-range `IndexError`, literal zero division, incompatible operand `TypeError`, and clean code. Each sample identifies what static checks can establish and where behavior cannot be inferred.
+Latest local validation: **51 passed** with `.venv\Scripts\python.exe -m pytest -q`. App tests cover prediction-only output, unsupported and predicted-error states, and the continued availability of fixes, evidence, and verification.
 - Syntax validation is reported consistently as “Syntax validation passed” or “Syntax validation failed.” Allowlisted trusted reference operations show expected-versus-actual behavior for exact educational samples and their known corrections, but do not run the candidate code and are not behavioral verification of a fix.
-- Dark Streamlit interface and no API key.
+- A responsive dark developer-tool interface with Overview, Diagnosis, Suggested Fix, Fix Evidence, and Verification tabs; original and suggested source views; session-only activity metrics; and a practice hint/answer flow in Learning Mode.
+- The suggested-code block exposes Streamlit's built-in copy control, with a separate download action. No browser-specific clipboard integration is required.
+- **Analyze Code** performs static analysis and displays **Predicted Output — Not Executed** for bounded assignments, primitive arithmetic and values, `print()`, and determinable `if/else` branches. Syntax and known division/name errors are prediction diagnostics; unsupported code receives a clear unavailable message.
+- The predictor accepts only a restricted AST allowlist with node, depth, numeric, string, source, and output size limits. Unsupported code is never executed.
+- No API key.
 
 ### Architecture
 
@@ -32,6 +38,7 @@ Beginning Python programmers often see an exception but do not know which line m
 flowchart LR
     U[Student] --> UI[Streamlit app.py]
     UI --> A[analyzer.py: compile + AST]
+    UI --> P[predictor.py: bounded AST interpretation]
     A --> F[fixer.py: conservative suggestion + diff]
     A --> E[explainer.py: rule-based lesson]
     F --> V[verifier.py: compilation + trusted fixtures]
@@ -76,20 +83,21 @@ Add presentation screenshots here after running the app locally. No screenshots 
 
 ## Test results
 
-Last local run: **18 passed** with Python 3.10.8, pytest 8.4.2, and Streamlit 1.65.0 (`python -m pytest -q`). The ten-example integration check and Streamlit Learning Mode demo flow also passed. Re-run the suite after any changes before presenting.
+Run the complete local suite with `python -m pytest -q`. App tests cover prediction-only output, unsupported and predicted-error states, and the continued availability of fixes, evidence, and verification.
 
 ## Verification and safety limitations
 
-- Submitted code is compiled and parsed but never passed to `exec()`, `eval()`, or a subprocess.
+- The analyzer and verifier parse/compile submitted text and use trusted fixture operations; they do not execute submitted source.
+- Predicted output is not executed or verified output. It is produced only for the explicit `predictor.py` allowlist with AST and size limits. Unsupported syntax returns “Prediction unavailable for this code. The program was not executed.”
 - A successful compile only says that the syntax is acceptable. It does not establish that the program runs correctly or computes the right answer.
-- Trusted sample operations run against fixed fixture inputs in BugWise's own small allowlist. They demonstrate known behavior but are not an execution sandbox and do not run the suggested candidate.
+- Trusted sample operations compute results for fixed fixture inputs. They demonstrate known reference behavior and do not run the suggested candidate.
 - Static source analysis cannot reliably find every runtime failure. Dynamic behavior, user input, external services, and arbitrary package availability remain outside this version's verification.
 - The NameError scan focuses on unresolved global references and may not model dynamic namespace changes.
 
 ## GitHub and Streamlit deployment
 
 1. Create a GitHub repository yourself, then add/commit/push this project. Do not upload `.env`, `.venv`, or Streamlit secrets; `.gitignore` excludes them.
-2. In Streamlit Community Cloud, connect the repository and choose `app.py` as the main file.
+2. In Streamlit Community Cloud, connect the repository and choose `app.py` as the main file. The dashboard and recent history are held in Streamlit session state and are not permanent storage.
 3. Keep the Python dependencies in `requirements.txt`. No secrets are needed for the current features.
 4. If you later add an LLM key, store it in the deployment's secret manager and never commit it.
 
@@ -97,7 +105,7 @@ Publishing and account creation are intentionally left to the project owner.
 
 ## Future improvements
 
-- Add a bounded, OS-enforced isolated runner only after a security review.
-- Add more static rules, with false-positive-focused tests.
+- Expand the predictor's supported AST subset with focused accuracy and safety tests.
+- Add more static rules with false-positive-focused tests.
 - Provide optional type checking and configurable trusted behavioral fixtures.
 - Add accessible theme options and saved, user-controlled report export.
