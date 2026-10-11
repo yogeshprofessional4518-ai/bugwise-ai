@@ -1,7 +1,10 @@
 from pathlib import Path
+from unittest.mock import patch
 
 import streamlit as st
 from streamlit.testing.v1 import AppTest
+
+from examples import EXAMPLES
 
 
 APP_PATH = Path(__file__).resolve().parents[1] / "app.py"
@@ -10,6 +13,22 @@ APP_PATH = Path(__file__).resolve().parents[1] / "app.py"
 def _run_app():
     st.cache_data.clear()
     return AppTest.from_file(str(APP_PATH)).run(timeout=20)
+
+
+def test_sample_sidebar_handles_missing_detection_basis():
+    sample = {
+        key: value
+        for key, value in EXAMPLES["Undefined variable"].items()
+        if key != "detection_basis"
+    }
+    with patch.dict(EXAMPLES, {"Undefined variable": sample}):
+        app = _run_app()
+
+    assert not app.exception
+    assert any(
+        item.value == "Detection: Detection details unavailable."
+        for item in app.caption
+    )
 
 
 def test_analyze_displays_separate_predicted_output_without_running_code():

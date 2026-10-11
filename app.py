@@ -9,7 +9,7 @@ from typing import Any
 import streamlit as st
 
 from analyzer import analyze_code
-from examples import EXAMPLES, find_example_for_source
+from examples import EXAMPLES, find_example_for_source, get_detection_basis
 from explainer import explain_findings
 from fixer import get_fix_options, suggest_fix
 from predictor import predict_output
@@ -146,8 +146,9 @@ def _analyze(source: str) -> dict[str, Any]:
     )
     fix_options = get_fix_options(analysis["findings"])
     trusted_tests = (
-        matching_example["trusted_tests"]
-        if matching_example and fix["suggested_code"] == matching_example["corrected_code"]
+        matching_example.get("trusted_tests", [])
+        if matching_example
+        and fix["suggested_code"] == matching_example.get("corrected_code")
         else []
     )
     code_to_validate = fix["suggested_code"] or fix["attempted_code"] or source
@@ -281,7 +282,7 @@ def _show_diagnosis(result: dict[str, Any], learning_mode: bool) -> None:
     if not analysis["findings"] and matching_example:
         st.info(
             "Sample note: "
-            + matching_example["expected_diagnosis"]
+            + matching_example.get("expected_diagnosis", "No sample diagnosis is available.")
             + " This expected diagnosis is fixture metadata, not a general static-analysis result."
         )
 
@@ -373,7 +374,10 @@ def _show_evidence(result: dict[str, Any], learning_mode: bool) -> None:
                 f"({_finding_kind(finding)})"
             )
     elif matching_example:
-        st.write(f"**Sample expectation:** {matching_example['expected_diagnosis']}")
+        st.write(
+            "**Sample expectation:** "
+            + matching_example.get("expected_diagnosis", "No sample diagnosis is available.")
+        )
     else:
         st.write("No static finding was produced for the original source.")
 
@@ -492,8 +496,10 @@ with st.sidebar:
         format_func=lambda name: _EXAMPLE_LABELS.get(name, name),
     )
     selected_sample = EXAMPLES[st.session_state.example_choice]
-    st.caption(f"Expected diagnosis: {selected_sample['expected_diagnosis']}")
-    st.caption(f"Detection: {selected_sample['detection_basis']}")
+    st.caption(
+        f"Expected diagnosis: {selected_sample.get('expected_diagnosis', 'No sample diagnosis is available.') }"
+    )
+    st.caption(f"Detection: {get_detection_basis(selected_sample)}")
     st.button("Load Example", use_container_width=True, on_click=_load_example)
     st.divider()
     st.markdown("#### Session activity")
@@ -541,7 +547,10 @@ with editor_col:
             item for item in EXAMPLES.values()
             if item["id"] == st.session_state.selected_example
         )
-        st.caption(f"Loaded sample · expected: {example['expected_diagnosis']}")
+        st.caption(
+            "Loaded sample · expected: "
+            + example.get("expected_diagnosis", "No sample diagnosis is available.")
+        )
 
     if analyze_clicked:
         if not source.strip():

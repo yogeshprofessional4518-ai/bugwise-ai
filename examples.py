@@ -120,3 +120,8 @@ def find_example_for_source(source: str) -> dict | None:
         ),
         None,
     )
+
+
+def get_detection_basis(sample: dict) -> str:
+    """Return optional sample detection notes with a UI-safe fallback."""
+    return sample.get("detection_basis", "Detection details unavailable.")

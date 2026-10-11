@@ -1,5 +1,5 @@
 from analyzer import analyze_code
-from examples import EXAMPLES
+from examples import EXAMPLES, get_detection_basis
 
 
 def test_requested_example_cases_have_expected_static_outcomes():
@@ -23,3 +23,10 @@ def test_requested_example_cases_have_expected_static_outcomes():
 
 def test_every_example_explains_detection_limits():
     assert all(sample.get("detection_basis") for sample in EXAMPLES.values())
+
+
+def test_detection_basis_is_available_for_samples_with_or_without_metadata():
+    assert get_detection_basis({"detection_basis": "Static AST analysis."}) == (
+        "Static AST analysis."
+    )
+    assert get_detection_basis({}) == "Detection details unavailable."
