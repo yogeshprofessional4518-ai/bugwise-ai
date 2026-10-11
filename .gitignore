@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+build/
+dist/
+*.egg-info/
+
+# Environments and local secrets
+.venv/
+venv/
+env/
+.env
+.env.*
+!.env.example
+
+# Test and editor artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+.vscode/
+.idea/
+
+# Streamlit local state
+.streamlit/secrets.toml
